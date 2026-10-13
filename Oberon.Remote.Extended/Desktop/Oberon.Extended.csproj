@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <Version>1.0.0-preview.7</Version>
+    <AssemblyName>Oberon.Extended</AssemblyName>
+    <Product>Oberon Remote Extended</Product>
+    <Authors>katakishi0; SamsidParty contributors</Authors>
+    <Description>Cross-controller Xbox remote input server</Description>
+    <ApplicationIcon>../Assets/oberon-extended.ico</ApplicationIcon>
+    <PublishTrimmed>false</PublishTrimmed>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Core/Oberon.Extended.Core.csproj" />
+    <PackageReference Include="MonoGame.Library.SDL" Version="2.32.10.2" />
+  </ItemGroup>
+  <Target Name="GenerateExtendedIcon" BeforeTargets="CoreCompile" Condition="'$(OS)' == 'Windows_NT'">
+    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\..\Assets\build-icon.ps1&quot; -Output &quot;$(MSBuildProjectDirectory)\..\Assets\oberon-extended.ico&quot;" />
+  </Target>
+</Project>

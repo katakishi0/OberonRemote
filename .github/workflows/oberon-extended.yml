@@ -1,0 +1,121 @@
+name: Oberon Extended Windows
+on:
+  push:
+    branches: [source/katakishi0-clean]
+    paths:
+      - 'Oberon.Remote.Extended/**'
+      - 'README.md'
+      - '.github/workflows/oberon-extended.yml'
+  workflow_dispatch:
+concurrency:
+  group: oberon-extended-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: write
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.318'
+      - name: Test input protocol and WebSocket loopback
+        run: dotnet run --project Oberon.Remote.Extended/Tests/Oberon.Extended.Tests.csproj -c Release
+      - name: Publish standalone Windows x64
+        run: dotnet publish Oberon.Remote.Extended/Desktop/Oberon.Extended.csproj -c Release -r win-x64 --self-contained true -o artifacts/OberonExtended
+      - name: Verify Extended Windows executable icon
+        shell: pwsh
+        run: |
+          Add-Type -AssemblyName System.Drawing
+          $icoPath = 'Oberon.Remote.Extended/Assets/oberon-extended.ico'
+          $exePath = 'artifacts/OberonExtended/Oberon.Extended.exe'
+          if (!(Test-Path $icoPath)) { throw 'Extended icon was not generated' }
+          if ((Get-Item $icoPath).Length -lt 4096) { throw 'Generated icon is unexpectedly small' }
+          $icon = [System.Drawing.Icon]::ExtractAssociatedIcon((Resolve-Path $exePath).Path)
+          if ($null -eq $icon) { throw 'Windows EXE has no associated icon' }
+          try {
+            $bitmap = $icon.ToBitmap()
+            try {
+              $pixel = $bitmap.GetPixel([Math]::Min(1,$bitmap.Width-1), [Math]::Min(1,$bitmap.Height-1))
+              if ($pixel.R -gt 95 -or $pixel.G -gt 100 -or $pixel.B -gt 100) {
+                throw 'Embedded executable icon does not match dark Extended background'
+              }
+            } finally { $bitmap.Dispose() }
+          } finally { $icon.Dispose() }
+      - name: Include original credits and license
+        shell: pwsh
+        run: |
+          Copy-Item LICENSE artifacts/OberonExtended/LICENSE
+          Copy-Item README.md artifacts/OberonExtended/README.md
+          Copy-Item Legal/THIRD-PARTY-NOTICES.txt artifacts/OberonExtended/THIRD-PARTY-NOTICES.txt
+          if (!(Test-Path artifacts/OberonExtended/SDL2.dll)) { throw 'SDL2.dll is missing' }
+          if (!(Test-Path artifacts/OberonExtended/Oberon.Extended.exe)) { throw 'Oberon.Extended.exe is missing' }
+      - name: Windows UI launch and preview
+        shell: pwsh
+        run: |
+          $preview = Join-Path $PWD 'artifacts/OberonExtended/PREVIEW.png'
+          $process = Start-Process artifacts/OberonExtended/Oberon.Extended.exe -ArgumentList '--render-preview', $preview -PassThru
+          if (!$process.WaitForExit(30000)) { $process.Kill(); throw 'UI preview timed out' }
+          if ($process.ExitCode -ne 0 -or !(Test-Path $preview)) { throw 'UI preview failed' }
+      - name: Create Portable ZIP
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force artifacts/Distribution | Out-Null
+          Remove-Item artifacts/OberonExtended/PREVIEW.png -ErrorAction SilentlyContinue
+          Compress-Archive -Path artifacts/OberonExtended/* -DestinationPath artifacts/Distribution/Oberon_Extended_Portable_Windows_x64.zip -Force
+          if ((Get-Item artifacts/Distribution/Oberon_Extended_Portable_Windows_x64.zip).Length -lt 3000000) { throw 'Portable ZIP is too small' }
+      - name: Build Windows installer with Inno Setup
+        shell: pwsh
+        run: |
+          $inno = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6/ISCC.exe'
+          if (!(Test-Path $inno)) {
+            choco install innosetup --no-progress -y
+            if ($LASTEXITCODE -ne 0) { throw 'Cannot install Inno Setup' }
+          }
+          if (!(Test-Path $inno)) { throw 'Inno Setup compiler missing' }
+          & $inno '/DProductVersion=1.0.0-preview.7' Oberon.Remote.Extended/Installer/OberonExtended.iss
+          if ($LASTEXITCODE -ne 0) { throw 'Installer compilation failed' }
+          $installer = 'artifacts/Installer/Oberon_Extended_Setup_Windows_x64.exe'
+          if (!(Test-Path $installer) -or (Get-Item $installer).Length -lt 3000000) { throw 'Installer was not generated' }
+          Copy-Item $installer artifacts/Distribution/Oberon_Extended_Setup_Windows_x64.exe
+      - name: Smoke test the installed Windows EXE
+        shell: pwsh
+        run: |
+          $setup = (Resolve-Path 'artifacts/Distribution/Oberon_Extended_Setup_Windows_x64.exe').Path
+          $install = Join-Path $env:TEMP 'OberonExtendedInstallerTest'
+          $process = Start-Process $setup -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',"/DIR=$install") -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "Installer failed: $($process.ExitCode)" }
+          $exe = Join-Path $install 'Oberon.Extended.exe'
+          if (!(Test-Path $exe)) { throw 'Installed executable missing' }
+          $uninstall = Join-Path $install 'unins000.exe'
+          if (Test-Path $uninstall) { Start-Process $uninstall -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART') -Wait }
+      - name: Upload Portable ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: Oberon_Extended_Portable_Windows_x64
+          path: artifacts/Distribution/Oberon_Extended_Portable_Windows_x64.zip
+          retention-days: 30
+          if-no-files-found: error
+      - name: Upload Windows installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: Oberon_Extended_Setup_Windows_x64
+          path: artifacts/Distribution/Oberon_Extended_Setup_Windows_x64.exe
+          retention-days: 30
+          if-no-files-found: error
+      - name: Publish validated preview to GitHub Releases
+        if: false # Source snapshot only; install packages are uploaded as artifacts.
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.0-preview.7
+          target_commitish: main
+          name: Oberon Remote Extended v1.0.0-preview.7
+          prerelease: true
+          make_latest: false
+          generate_release_notes: true
+          overwrite_files: true
+          files: |
+            artifacts/Distribution/Oberon_Extended_Portable_Windows_x64.zip
+            artifacts/Distribution/Oberon_Extended_Setup_Windows_x64.exe

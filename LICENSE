@@ -1,0 +1,15 @@
+License For Oberon Remote Input
+Copyright © SamsidParty
+
+Usage of any component of this software, or any of the source code from this software falls under this license agreement.
+This license grants anyone the rights to use, copy, modify, merge, publish, redistribute, and/or sell copies of this software with the following limitations:
+
+1. Credit
+  This license file and a link to the original repository (https://github.com/SamsidParty/OberonRemote) must be included with any distributions of this software.
+
+2. Source Code
+  Any modifications to this software must also be publicly available to view in full, unobfuscated source code form.
+
+3. Microsoft Store Non-Compete
+  You may not publish any variations (modified or unmodified) of this software to the Microsoft Store, or use any code from this software in Microsoft Store packages.
+  You are still permitted to publish to third-party "dev mode" stores so long as you follow the rest of this license agreement.

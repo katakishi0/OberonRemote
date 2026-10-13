@@ -1,0 +1,95 @@
+﻿<Page
+    x:Class="Oberon.MainPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:Oberon"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d"
+    Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
+
+    <Grid>
+        <TextBlock HorizontalAlignment="Left" Margin="36,36,0,0" TextWrapping="Wrap" Text="Paired Remotes" VerticalAlignment="Top" Height="62" Width="280" FontFamily="Bahnschrift SemiBold" FontSize="30"/>
+
+
+        <Grid Margin="36,100,36,100" >
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <ListView x:Name="remoteList" ItemsSource="{x:Bind Remotes}" SelectionChanged="SelectionChanged" ItemClick="RemoteItemClicked" IsItemClickEnabled="True" VerticalAlignment="Stretch" HorizontalAlignment="Stretch" Grid.Column="0">
+                <ListView.ItemTemplate>
+                    <DataTemplate x:DataType="local:PairedRemote">
+                        <Grid Background="{x:Bind Background}" Margin="0" Padding="10" HorizontalAlignment="Stretch">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0" Background="{x:Bind Background}" Orientation="Vertical" Margin="0" Padding="0" HorizontalAlignment="Stretch">
+                                <TextBlock FontSize="20" FontFamily="Bahnschrift SemiBold" Text="{x:Bind DisplayName}"/>
+                                <TextBlock FontSize="14" Text="{x:Bind DisplayAddress}" FontFamily="Cascadia Code"/>
+                            </StackPanel>
+                            <StackPanel Grid.Column="1" Background="{x:Bind Background}" Orientation="Vertical" Margin="0" Padding="0" HorizontalAlignment="Right" VerticalAlignment="Center">
+                                <TextBlock FontSize="14" VerticalAlignment="Center" Text="{x:Bind ConnectedText}"/>
+                            </StackPanel>
+                        </Grid>
+                    </DataTemplate>
+                </ListView.ItemTemplate>
+                <ListView.ItemContainerStyle>
+                    <Style TargetType="ListViewItem">
+                        <Setter Property="BorderThickness" Value="0" />
+                        <Setter Property="Padding" Value="0" />
+                        <Setter Property="VerticalContentAlignment" Value="Stretch" />
+                        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                    </Style>
+                </ListView.ItemContainerStyle>
+            </ListView>
+        </Grid>
+
+        <Button IsEnabled="{x:Bind InteractionEnabled}" Click="AddRemote" Content="+ Add Remote" Margin="36,0,0,36" VerticalAlignment="Bottom" FontFamily="Bahnschrift Light" Height="37" Width="126" FontSize="16"/>
+        <Button IsEnabled="{x:Bind InteractionEnabled}" Click="Donate" Content="$ Donate" Margin="168,0,0,36" VerticalAlignment="Bottom" FontFamily="Bahnschrift Light" Height="37" Width="90" FontSize="16"/>
+        <ProgressRing x:Name="loadingRing" Width="20" Height="20" HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="268,0,0,45"/>
+
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,36,28">
+            <Image Height="37" Width="37" Source="/Assets/SmallTile.scale-400.png" />
+            <TextBlock HorizontalAlignment="Left" VerticalAlignment="Center" TextWrapping="Wrap" Text=" Oberon" Height="Auto" Width="Auto" FontFamily="Bahnschrift SemiBold" FontSize="20"/>
+        </StackPanel>
+        
+        <ContentDialog x:Name="addRemoteDialog"
+                       Title="Add New Remote"
+                       PrimaryButtonText="Add"
+                       CloseButtonText="Cancel"
+                       PrimaryButtonClick="FinishRemotePairing"
+                       >
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+                <TextBlock Text="• You'll need to install the Oberon Remote app on another device" Grid.Row="0" FontSize="11"/>
+                <TextBlock Text="• The remote and this Xbox must be on the same local network" Grid.Row="1" FontSize="11"/>
+                <TextBlock Text="• The remote will display its IP address near the top" Grid.Row="2" FontSize="11"/>
+                <TextBlock Text="• In case the remote changes its IP in the future, you'll have to pair again" Grid.Row="3" FontSize="11" Margin="0 0 0 10"/>
+                <TextBox x:Name="remoteIP" Width="Auto" Height="32" Grid.Row="4" PlaceholderText="Remote IP Address"/>
+            </Grid>
+        </ContentDialog>
+
+        <ContentDialog x:Name="remoteFailedDialog"
+                       Title="Connection Failed"
+                       PrimaryButtonText="Try Again"
+                       CloseButtonText="Cancel"
+                       PrimaryButtonClick="FinishRemotePairing"
+                       >
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                <TextBlock x:Name="remoteFailedErrorMessage" Text="" Grid.Row="0" FontSize="11"/>
+            </Grid>
+        </ContentDialog>
+    </Grid>
+</Page>
