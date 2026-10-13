@@ -1,0 +1,160 @@
+name: Oberon Remote Extended - Beta Release
+
+# Run manually from the Actions tab on the default branch.
+# Every release made by this workflow is a prerelease, never a stable release.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Beta version, e.g. 1.0.0-beta.1'
+        required: true
+        default: '1.0.0-beta.1'
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: oberon-extended-beta-release
+  cancel-in-progress: false
+
+jobs:
+  build-and-release:
+    name: Build and publish Windows beta
+    if: github.repository == 'katakishi0/OberonRemote'
+    runs-on: windows-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Validate the beta version
+        shell: pwsh
+        env:
+          REQUESTED_VERSION: ${{ inputs.version }}
+        run: |
+          $version = $env:REQUESTED_VERSION.Trim()
+          if ($version -cnotmatch '^\d+\.\d+\.\d+-beta\.\d+$') {
+            throw 'Only beta versions are allowed, e.g. 1.0.0-beta.1. Stable versions cannot be published.'
+          }
+          "BETA_VERSION=$version" >> $env:GITHUB_ENV
+          "BETA_TAG=v$version" >> $env:GITHUB_ENV
+
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up .NET 9
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.318'
+
+      - name: Set application version for this beta
+        shell: pwsh
+        run: |
+          $versionFile = 'Oberon.Remote.Extended/Desktop/ExtendedVersion.cs'
+          $projectFile = 'Oberon.Remote.Extended/Desktop/Oberon.Extended.csproj'
+          $source = Get-Content $versionFile -Raw
+          $updated = [regex]::Replace($source, 'internal const string Number = "[^"]+";', "internal const string Number = `"$env:BETA_VERSION`";")
+          if ($updated -eq $source) { throw 'Could not update ExtendedVersion.Number' }
+          Set-Content $versionFile -Value $updated -Encoding utf8
+          $project = Get-Content $projectFile -Raw
+          if ($project -notmatch '<Version>[^<]+</Version>') { throw 'Project version not found' }
+          $project = [regex]::Replace($project, '<Version>[^<]+</Version>', "<Version>$env:BETA_VERSION</Version>")
+          Set-Content $projectFile -Value $project -Encoding utf8
+
+      - name: Run input and WebSocket tests
+        shell: pwsh
+        run: |
+          dotnet run --project Oberon.Remote.Extended/Tests/Oberon.Extended.Tests.csproj -c Release
+          if ($LASTEXITCODE -ne 0) { throw 'Automated tests failed' }
+
+      - name: Build portable Windows application
+        shell: pwsh
+        run: |
+          dotnet publish Oberon.Remote.Extended/Desktop/Oberon.Extended.csproj -c Release -r win-x64 --self-contained true "-p:Version=$env:BETA_VERSION" -o artifacts/OberonExtended
+          if ($LASTEXITCODE -ne 0) { throw 'Windows build failed' }
+          foreach ($file in @('Oberon.Extended.exe', 'SDL2.dll')) {
+            if (!(Test-Path "artifacts/OberonExtended/$file")) { throw "Missing $file" }
+          }
+          Copy-Item LICENSE artifacts/OberonExtended/LICENSE
+          Copy-Item README.md artifacts/OberonExtended/README.md
+          Copy-Item Legal/THIRD-PARTY-NOTICES.txt artifacts/OberonExtended/THIRD-PARTY-NOTICES.txt
+
+      - name: Check application start and icon
+        shell: pwsh
+        run: |
+          Add-Type -AssemblyName System.Drawing
+          $exe = (Resolve-Path 'artifacts/OberonExtended/Oberon.Extended.exe').Path
+          $icon = [System.Drawing.Icon]::ExtractAssociatedIcon($exe)
+          if ($null -eq $icon) { throw 'No icon embedded in the executable' }
+          $icon.Dispose()
+          $preview = Join-Path $PWD 'artifacts/OberonExtended/PREVIEW.png'
+          $app = Start-Process $exe -ArgumentList '--render-preview', $preview -PassThru
+          if (!$app.WaitForExit(30000)) { $app.Kill(); throw 'Interface startup timed out' }
+          if ($app.ExitCode -ne 0 -or !(Test-Path $preview)) { throw 'Interface startup failed' }
+          Remove-Item $preview
+
+      - name: Create portable ZIP
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force artifacts/Distribution | Out-Null
+          Compress-Archive -Path artifacts/OberonExtended/* -DestinationPath artifacts/Distribution/Oberon_Extended_Portable_Windows_x64.zip -Force
+          if ((Get-Item artifacts/Distribution/Oberon_Extended_Portable_Windows_x64.zip).Length -lt 3000000) {
+            throw 'Portable ZIP is unexpectedly small'
+          }
+
+      - name: Build Windows installer
+        shell: pwsh
+        run: |
+          $inno = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6/ISCC.exe'
+          if (!(Test-Path $inno)) {
+            choco install innosetup --no-progress -y
+            if ($LASTEXITCODE -ne 0) { throw 'Could not install Inno Setup' }
+          }
+          if (!(Test-Path $inno)) { throw 'Inno Setup compiler not found' }
+          & $inno "/DProductVersion=$env:BETA_VERSION" Oberon.Remote.Extended/Installer/OberonExtended.iss
+          if ($LASTEXITCODE -ne 0) { throw 'Installer compilation failed' }
+          $setup = 'artifacts/Installer/Oberon_Extended_Setup_Windows_x64.exe'
+          if (!(Test-Path $setup) -or (Get-Item $setup).Length -lt 3000000) {
+            throw 'Installer file is missing or unexpectedly small'
+          }
+          Copy-Item $setup artifacts/Distribution/Oberon_Extended_Setup_Windows_x64.exe
+
+      - name: Test installer and uninstaller
+        shell: pwsh
+        run: |
+          $setup = (Resolve-Path 'artifacts/Distribution/Oberon_Extended_Setup_Windows_x64.exe').Path
+          $destination = Join-Path $env:TEMP 'OberonExtendedBetaInstallerTest'
+          $process = Start-Process $setup -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/DIR=$destination") -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "Installer exited with $($process.ExitCode)" }
+          if (!(Test-Path (Join-Path $destination 'Oberon.Extended.exe'))) { throw 'Installed app missing' }
+          $uninstall = Join-Path $destination 'unins000.exe'
+          if (!(Test-Path $uninstall)) { throw 'Uninstaller missing' }
+          $process = Start-Process $uninstall -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART') -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw 'Uninstallation failed' }
+
+      - name: Upload portable build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Oberon_Extended_Portable_Windows_x64
+          path: artifacts/Distribution/Oberon_Extended_Portable_Windows_x64.zip
+          if-no-files-found: error
+
+      - name: Upload installer build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Oberon_Extended_Setup_Windows_x64
+          path: artifacts/Distribution/Oberon_Extended_Setup_Windows_x64.exe
+          if-no-files-found: error
+
+      - name: Publish BETA on GitHub Releases (not stable)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.BETA_TAG }}
+          target_commitish: ${{ github.sha }}
+          name: Oberon Remote Extended ${{ env.BETA_TAG }} (Beta)
+          draft: false
+          prerelease: true
+          make_latest: false
+          generate_release_notes: true
+          files: |
+            artifacts/Distribution/Oberon_Extended_Setup_Windows_x64.exe
+            artifacts/Distribution/Oberon_Extended_Portable_Windows_x64.zip
